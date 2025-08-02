@@ -3,3 +3,8 @@ __pycache__/
 *.pyc
 .env
 stt
+
+# FAISS vector database files (auto-generated)
+faiss_index/
+*.faiss
+*.pkl

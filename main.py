@@ -3,10 +3,10 @@ import streamlit as st
 import sys
 import os
 
-# Append the project root directory (2 levels up) to sys.path
+# Append the project directory (2 levels up) to sys.path
 #sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from agent.handbook_agent_v5 import answer_handbook_question, preprocess_and_setup_rag  # ✅ New import
+from agent.handbook_agent_v5 import answer_handbook_question, preprocess_and_setup_rag, process_uploaded_file  # ✅ New import
 import os
 #from dotenv import load_dotenv
 
@@ -35,10 +35,15 @@ with st.sidebar:
     # Bot Information
     st.subheader("ℹ️ About")
     st.markdown("""
-    I'm your personal CUSD assistant! I can help you with:
-    - 📅 School calendar events
-    - 📚 Student handbook policies
-    - 🏫 General school information
+    I'm your personal assistant! I can help you with:
+    - School calendar events and dates
+    - Student handbook policies and procedures  
+    - Dress code and behavior guidelines
+    - Academic policies and requirements
+    
+    📚 **Document Options:**
+    - Use pre-loaded handbook & calendar
+    - Upload your own PDF/TXT documents
     """)
     
     st.markdown("---")
@@ -47,13 +52,15 @@ with st.sidebar:
     st.subheader("💡 Try asking me:")
     example_questions = [
         "When is winter break?",
-        "What is the dress code policy?",
+        "What is the dress code policy?", 
         "When does school start?",
-        "What are the discipline rules?"
+        "What are the discipline rules?",
+        "What are the school hours?",
+        "What is the attendance policy?"
     ]
     
-    for question in example_questions:
-        if st.button(question, key=f"example_{question[:10]}"):
+    for i, question in enumerate(example_questions):
+        if st.button(question, key=f"example_btn_{i}"):
             # Set the question in session state to be processed
             st.session_state.sidebar_question = question
     
@@ -61,10 +68,10 @@ with st.sidebar:
     st.markdown("---")
     
     # Chat Controls
-    st.subheader("🛠️ Chat Controls")
+    st.subheader("Chat Controls")
     
     # Clear chat history
-    if st.button("🗑️ Clear Chat History", type="secondary"):
+    if st.button("Clear Chat History", type="secondary"):
         st.session_state.messages = []
         #LangChain’s ConversationalRetrievalChain SET UP SO IT CAN TAKE IN CHAT HISTORY
         #st.session_state.chat_history = []
@@ -78,7 +85,7 @@ with st.sidebar:
     ]) 
 
     st.download_button(
-        label="💾 Download Chat",
+        label="Download Chat",
         data=chat_history if chat_history else "No messages yet.",
         file_name="cusd_bot_chat.txt",
         mime="text/plain"
@@ -87,7 +94,7 @@ with st.sidebar:
     st.markdown("---")
     
     # Statistics
-    st.subheader("📊 Session Stats")
+    st.subheader("Session Stats")
     message_count = len(st.session_state.get("messages", []))
     user_messages = len([m for m in st.session_state.get("messages", []) if m["role"] == "user"])
     
@@ -100,7 +107,7 @@ with st.sidebar:
     st.markdown("---")
     
     # Settings
-    st.subheader("⚙️ Settings")
+    st.subheader("Settings")
     
     # Theme toggle (placeholder for future implementation)
     show_timestamps = st.checkbox("Show timestamps", value=False)
@@ -112,9 +119,10 @@ with st.sidebar:
     # Footer
     st.markdown("""
     <small>
-    💡 Tip: Click on example questions above to try them quickly!
+    💡 **Tip:** Click on example questions above to try them quickly!
     
-    📧 Need help? Contact CUSD support.
+    📋 **Options:** Use pre-loaded documents or upload your own PDF/TXT files.
+    Initialize the assistant first before asking questions.
     </small>
     """, unsafe_allow_html=True)
 
@@ -128,19 +136,61 @@ st.image(BOT_AVATAR, width=80)           # Shows the image
 st.title(f"Welcome to {BOT_NAME}")
 
 st.markdown("""
-This is your personal assistant. Ask me anything related to CUSD, and I'll try my best to help you!
+This is your personal assistant for CUSD Elementary Handbook and Calendar information. Ask me anything related to school policies, events, and procedures!
 """)
 
+# Create two columns for different initialization options
+col1, col2 = st.columns(2)
 
-if st.button("Start Assistant"):
-    if "qa_chain" not in st.session_state:
-        with st.spinner("🧠 Initializing the handbook agent..."):
-            try:
-                st.session_state.qa_chain = preprocess_and_setup_rag()
-                st.session_state.agent_ready = True  # flag for showing success
-                st.success("Agent is ready!")
-            except Exception as e:
-                st.error(f"❌ Error during initialization: {e}")
+with col1:
+    st.subheader("📚 Use Pre-loaded Documents")
+    st.markdown("Load the default handbook and calendar documents.")
+    
+    if st.button("Start Assistant", key="start_preloaded"):
+        if "qa_chain" not in st.session_state:
+            with st.spinner("Initializing the handbook agent..."):
+                try:
+                    st.session_state.qa_chain = preprocess_and_setup_rag()
+                    st.session_state.agent_ready = True
+                    st.session_state.document_source = "pre-loaded"
+                    st.success("✅ Agent is ready! I've loaded the handbook and calendar documents.")
+                except Exception as e:
+                    st.error(f"❌ Error during initialization: {e}")
+                    st.error("Make sure the data folder contains handbook and calendar files.")
+
+with col2:
+    st.subheader("📄 Upload Your Own Documents")
+    st.markdown("Upload PDF or text files to create a custom knowledge base.")
+    
+    uploaded_file = st.file_uploader(
+        "Choose a PDF or TXT file", 
+        type=["pdf", "txt"],
+        help="Upload a document to create a custom knowledge base"
+    )
+    
+    if uploaded_file is not None:
+        st.write(f"📁 **Selected file:** {uploaded_file.name}")
+        st.write(f"📏 **File size:** {uploaded_file.size} bytes")
+        
+        if st.button("Process Uploaded Document", key="process_upload"):
+            with st.spinner("Processing your document..."):
+                try:
+                    st.session_state.qa_chain = process_uploaded_file(uploaded_file)
+                    if st.session_state.qa_chain:
+                        st.session_state.agent_ready = True
+                        st.session_state.document_source = f"uploaded: {uploaded_file.name}"
+                        st.success(f"✅ Document '{uploaded_file.name}' processed successfully!")
+                    else:
+                        st.error("❌ Failed to process the document. Please check the file format and content.")
+                except Exception as e:
+                    st.error(f"❌ Error processing document: {e}")
+
+# Show current document source if agent is ready
+if st.session_state.get("agent_ready", False):
+    source = st.session_state.get("document_source", "unknown")
+    st.info(f"🤖 **Assistant Status:** Ready | **Document Source:** {source}")
+
+st.markdown("---")
 
 
 # Initialize chat history
@@ -152,23 +202,25 @@ if "messages" not in st.session_state:
 #if "chat_history" not in st.session_state:
 #    st.session_state.chat_history = []
 
-# Handle sidebar question selection
+    # Handle sidebar question selection
 if "sidebar_question" in st.session_state:
-    # Add the sidebar question to chat
-    st.session_state.messages.append({
-        "role": "user", 
-        "content": st.session_state.sidebar_question
-    })
-    # Generate response (placeholder for now)
-    #response = f"{BOT_NAME}: You asked - '{st.session_state.sidebar_question}'. This is a placeholder response."
-    if st.session_state.sidebar_question:
+    # Check if assistant is ready
+    if "qa_chain" not in st.session_state or st.session_state.qa_chain is None:
+        st.warning("⚠️ Please click 'Start Assistant' first to initialize the system.")
+    else:
+        # Add the sidebar question to chat
+        st.session_state.messages.append({
+            "role": "user", 
+            "content": st.session_state.sidebar_question
+        })
+        
         with st.spinner("Thinking..."):
             response = answer_handbook_question(st.session_state.sidebar_question, st.session_state.qa_chain)
 
-    st.session_state.messages.append({
-        "role": "assistant", 
-        "content": response
-    })
+        st.session_state.messages.append({
+            "role": "assistant", 
+            "content": response
+        })
     # Clear the sidebar question
     del st.session_state.sidebar_question
     st.rerun()
@@ -185,27 +237,19 @@ for i, message in enumerate(st.session_state.messages):
 
 
 if prompt := st.chat_input("Ask your question here..."):
+    # Check if assistant is ready
+    if "qa_chain" not in st.session_state or st.session_state.qa_chain is None:
+        st.warning("⚠️ Please click 'Start Assistant' first to initialize the system.")
+        st.stop()
+    
     # Show user message
     with st.chat_message("user"):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # --- PLACEHOLDER LOGIC ---
-    # Replace this with actual API call using API_KEY
-
-    #response = f"{BOT_NAME}: You asked - '{prompt}'. This is a placeholder response."
-    if prompt:
-        with st.spinner("Thinking..."):
-            response = answer_handbook_question(prompt, st.session_state.qa_chain)
-            '''
-            #LangChain's ConversationalRetrievalChain SET UP SO IT CAN TAKE IN CHAT HISTORY
-            response, updated_history = answer_handbook_question(
-            user_question,
-            st.session_state.qa_chain,
-            st.session_state.chat_history
-        )
-            st.session_state.chat_history = updated_history  # Update memory
-            '''
+    # Get response from the handbook agent
+    with st.spinner("Thinking..."):
+        response = answer_handbook_question(prompt, st.session_state.qa_chain)
 
     # Display assistant message
     with st.chat_message("assistant"):
